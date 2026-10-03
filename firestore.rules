@@ -1,0 +1,198 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedInToStore(storeId) {
+      return request.auth != null && request.auth.uid == storeId;
+    }
+
+    function validStoreId(storeId) {
+      return request.resource.data.storeId == storeId;
+    }
+
+    function validRecordId(recordId) {
+      return request.resource.data.id == recordId;
+    }
+
+    function customerExistsAfter(storeId, customerId) {
+      return existsAfter(/databases/$(database)/documents/stores/$(storeId)/customers/$(customerId));
+    }
+
+    function validDate(value) {
+      return value is string && value.matches('^\\d{4}-\\d{2}-\\d{2}$');
+    }
+
+    function validNumber(value) {
+      return value is int || value is float;
+    }
+
+    function validItem(item) {
+      return item is map
+        && item.keys().hasAll(['name', 'quantity', 'price', 'total'])
+        && item.keys().hasOnly(['name', 'quantity', 'price', 'total'])
+        && item.name is string
+        && item.name.size() > 0
+        && item.name.size() <= 80
+        && item.quantity is int
+        && item.quantity > 0
+        && validNumber(item.price)
+        && item.price >= 0
+        && validNumber(item.total)
+        && item.total >= 0;
+    }
+
+    function validTransactionData(storeId, transactionId) {
+      return validStoreId(storeId)
+        && validRecordId(transactionId)
+        && request.resource.data.keys().hasAll(['storeId', 'id', 'customerId', 'date', 'items', 'total', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['storeId', 'id', 'customerId', 'date', 'items', 'total', 'createdAt'])
+        && request.resource.data.customerId is string
+        && validDate(request.resource.data.date)
+        && request.resource.data.items is list
+        && request.resource.data.items.size() > 0
+        && request.resource.data.items.size() <= 100
+        && validItem(request.resource.data.items[0])
+        && validNumber(request.resource.data.total)
+        && request.resource.data.total >= 0
+        && request.resource.data.createdAt is string
+        && customerExistsAfter(storeId, request.resource.data.customerId);
+    }
+
+    function validPaymentData(storeId, paymentId) {
+      return validStoreId(storeId)
+        && validRecordId(paymentId)
+        && request.resource.data.keys().hasAll(['storeId', 'id', 'customerId', 'date', 'amount', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['storeId', 'id', 'customerId', 'date', 'amount', 'createdAt'])
+        && request.resource.data.customerId is string
+        && validDate(request.resource.data.date)
+        && validNumber(request.resource.data.amount)
+        && request.resource.data.amount > 0
+        && request.resource.data.createdAt is string
+        && customerExistsAfter(storeId, request.resource.data.customerId);
+    }
+
+    match /stores/{storeId} {
+      allow get: if signedInToStore(storeId);
+      allow list: if false;
+      allow create: if signedInToStore(storeId)
+        && request.resource.data.keys().hasAll(['storeId', 'storeName', 'normalizedStoreName', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['storeId', 'storeName', 'normalizedStoreName', 'createdAt', 'updatedAt'])
+        && validStoreId(storeId)
+        && request.resource.data.storeName is string
+        && request.resource.data.storeName.size() > 0
+        && request.resource.data.storeName.size() <= 80
+        && request.resource.data.normalizedStoreName is string
+        && request.resource.data.normalizedStoreName.size() > 0
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
+      allow update: if signedInToStore(storeId)
+        && validStoreId(storeId)
+        && request.resource.data.storeId == resource.data.storeId
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.keys().hasOnly(['storeId', 'storeName', 'normalizedStoreName', 'createdAt', 'updatedAt'])
+        && request.resource.data.storeName is string
+        && request.resource.data.storeName.size() > 0
+        && request.resource.data.storeName.size() <= 80
+        && request.resource.data.normalizedStoreName is string
+        && request.resource.data.updatedAt is timestamp;
+      allow delete: if false;
+
+      match /customers/{customerId} {
+        allow get, list: if signedInToStore(storeId);
+        allow create: if signedInToStore(storeId)
+          && validStoreId(storeId)
+          && validRecordId(customerId)
+          && request.resource.data.keys().hasAll(['storeId', 'id', 'name', 'sitio', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['storeId', 'id', 'name', 'sitio', 'createdAt'])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 80
+          && request.resource.data.sitio in ['Sitio 1', 'Sitio 2', 'Sitio 3', 'Sitio 4', 'Sitio 5', 'Sitio 6', 'Sitio 7']
+          && validDate(request.resource.data.createdAt);
+        allow update: if signedInToStore(storeId)
+          && validStoreId(storeId)
+          && validRecordId(customerId)
+          && request.resource.data.keys().hasAll(['storeId', 'id', 'name', 'sitio', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['storeId', 'id', 'name', 'sitio', 'createdAt'])
+          && request.resource.data.storeId == resource.data.storeId
+          && request.resource.data.id == resource.data.id
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 80
+          && request.resource.data.sitio in ['Sitio 1', 'Sitio 2', 'Sitio 3', 'Sitio 4', 'Sitio 5', 'Sitio 6', 'Sitio 7'];
+        allow delete: if signedInToStore(storeId) && resource.data.storeId == storeId;
+      }
+
+      match /transactions/{transactionId} {
+        allow get, list: if signedInToStore(storeId);
+        allow create: if signedInToStore(storeId) && validTransactionData(storeId, transactionId);
+        allow update: if signedInToStore(storeId)
+          && validTransactionData(storeId, transactionId)
+          && request.resource.data.storeId == resource.data.storeId
+          && request.resource.data.id == resource.data.id
+          && request.resource.data.customerId == resource.data.customerId
+          && request.resource.data.createdAt == resource.data.createdAt;
+        allow delete: if signedInToStore(storeId) && resource.data.storeId == storeId;
+      }
+
+      match /payments/{paymentId} {
+        allow get, list: if signedInToStore(storeId);
+        allow create: if signedInToStore(storeId) && validPaymentData(storeId, paymentId);
+        allow update: if signedInToStore(storeId)
+          && validPaymentData(storeId, paymentId)
+          && request.resource.data.storeId == resource.data.storeId
+          && request.resource.data.id == resource.data.id
+          && request.resource.data.customerId == resource.data.customerId
+          && request.resource.data.createdAt == resource.data.createdAt;
+        allow delete: if signedInToStore(storeId) && resource.data.storeId == storeId;
+      }
+
+      match /balances/{customerId} {
+        allow get, list: if signedInToStore(storeId);
+        allow create, update: if signedInToStore(storeId)
+          && request.resource.data.keys().hasAll(['storeId', 'customerId', 'totalDebt', 'totalPaid', 'recordCount'])
+          && request.resource.data.keys().hasOnly(['storeId', 'customerId', 'totalDebt', 'totalPaid', 'recordCount'])
+          && request.resource.data.storeId == storeId
+          && request.resource.data.customerId == customerId
+          && validNumber(request.resource.data.totalDebt)
+          && request.resource.data.totalDebt >= 0
+          && validNumber(request.resource.data.totalPaid)
+          && request.resource.data.totalPaid >= 0
+          && request.resource.data.recordCount is int
+          && request.resource.data.recordCount >= 0
+          && existsAfter(/databases/$(database)/documents/stores/$(storeId)/customers/$(customerId));
+        allow delete: if signedInToStore(storeId) && resource.data.storeId == storeId;
+      }
+
+      match /migrations/{migrationId} {
+        allow get, list: if signedInToStore(storeId);
+        allow create: if signedInToStore(storeId)
+          && request.resource.data.keys().hasAll(['storeId', 'fingerprint', 'status', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['storeId', 'fingerprint', 'status', 'createdAt'])
+          && request.resource.data.storeId == storeId
+          && request.resource.data.fingerprint is string
+          && request.resource.data.fingerprint.size() == 64
+          && migrationId == 'legacy-' + request.resource.data.fingerprint
+          && request.resource.data.status in ['importing', 'skipped']
+          && request.resource.data.createdAt is timestamp;
+        allow update: if signedInToStore(storeId)
+          && resource.data.storeId == storeId
+          && resource.data.status == 'importing'
+          && request.resource.data.storeId == resource.data.storeId
+          && request.resource.data.fingerprint == resource.data.fingerprint
+          && request.resource.data.status in ['imported', 'skipped']
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+        allow delete: if false;
+      }
+
+      match /balanceGuards/{customerId} {
+        allow read, write: if false;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#246b52">
+  <meta name="description" content="A simple offline utang list for your sari-sari store.">
+  <title>Utang List</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore-compat.js"></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <a class="brand" href="#top" aria-label="Utang List home">
+        <img src="icon.svg" alt="" width="42" height="42">
+        <span>Utang List</span>
+      </a>
+      <div class="header-actions">
+        <details id="account-menu" class="account-menu" hidden>
+          <summary id="account-store-name" class="account-store-name"></summary>
+          <div class="account-menu-panel">
+            <button class="button button-outline" id="store-info-button" type="button">Store information</button>
+            <button class="button button-outline" id="logout-button" type="button">Logout</button>
+          </div>
+        </details>
+        <button class="button button-light" id="add-customer-open" type="button" hidden>+ Add customer</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="auth-screen" class="auth-shell">
+    <section class="auth-panel" aria-labelledby="auth-title">
+      <p class="eyebrow">STORE ACCOUNT</p>
+      <h1 id="auth-title">UTANG LIST</h1>
+      <p id="auth-intro" class="auth-intro">Sign in to access your store records.</p>
+      <form id="login-form" class="auth-form">
+        <label class="form-field">Store Name<input id="login-store-name" type="text" maxlength="80" required autocomplete="username" placeholder="Enter store name"></label>
+        <label class="form-field">Password<input id="login-password" type="password" required autocomplete="current-password" placeholder="Enter password"></label>
+        <button id="login-submit" class="button button-primary auth-submit" type="submit">LOGIN</button>
+      </form>
+      <form id="create-store-form" class="auth-form" hidden>
+        <label class="form-field">Store Name<input id="create-store-name" type="text" maxlength="80" required autocomplete="organization" placeholder="Enter store name"></label>
+        <label class="form-field">Password<input id="create-password" type="password" minlength="10" maxlength="128" required autocomplete="new-password" placeholder="At least 10 characters"></label>
+        <label class="form-field">Confirm Password<input id="confirm-password" type="password" minlength="10" maxlength="128" required autocomplete="new-password" placeholder="Re-enter password"></label>
+        <button id="create-store-submit" class="button button-primary auth-submit" type="submit">CREATE STORE ACCOUNT</button>
+      </form>
+      <button id="show-create-account" class="button button-outline auth-switch" type="button">Create Store Account</button>
+      <button id="show-login" class="button button-outline auth-switch" type="button" hidden>Back to Login</button>
+      <p id="auth-message" class="auth-message" role="status" aria-live="polite"></p>
+      <p class="auth-notice">An internet connection is required to create an account or sign in on a new device.</p>
+    </section>
+    <p id="setup-message" class="setup-message" role="status" aria-live="polite"></p>
+  </main>
+
+  <main id="app-screen" class="page-shell" hidden>
+    <p id="cloud-status" class="cloud-status" data-state="syncing" role="status" aria-live="polite">SYNCING</p>
+    <section class="summary-grid" aria-label="Store summary">
+      <article class="summary-card summary-customers"><span>Total customers</span><strong id="summary-customers">0</strong></article>
+      <article class="summary-card summary-debt"><span>Total utang</span><strong id="summary-debt">₱0.00</strong></article>
+      <article class="summary-card summary-paid"><span>Total paid</span><strong id="summary-paid">₱0.00</strong></article>
+      <article class="summary-card summary-remaining"><span>Total remaining</span><strong id="summary-remaining">₱0.00</strong></article>
+    </section>
+
+    <section class="customer-section" aria-labelledby="customer-heading">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">STORE RECORDS</p>
+          <h1 id="customer-heading">Customers</h1>
+        </div>
+        <span id="customer-count" class="count-label">0 customers</span>
+      </div>
+
+      <div class="filters">
+        <label class="search-field">
+          <span class="visually-hidden">Search customer name</span>
+          <span class="search-mark" aria-hidden="true">⌕</span>
+          <input id="search-input" type="search" placeholder="Search customer name" autocomplete="off">
+        </label>
+        <label class="filter-field">
+          <span class="visually-hidden">Filter by sitio</span>
+          <select id="sitio-filter">
+            <option value="all">All Sitios</option>
+            <option>Sitio 1</option><option>Sitio 2</option><option>Sitio 3</option><option>Sitio 4</option>
+            <option>Sitio 5</option><option>Sitio 6</option><option>Sitio 7</option>
+          </select>
+        </label>
+      </div>
+
+      <div id="customer-list" class="customer-list" aria-live="polite"></div>
+    </section>
+
+    <section class="data-tools" aria-label="Backup and restore">
+      <div>
+        <h2>Store data</h2>
+        <p>Keep a copy of your customer records and transactions.</p>
+      </div>
+      <div class="tool-actions">
+        <button class="button button-outline" id="backup-button" type="button">Download backup</button>
+        <button class="button button-outline" id="restore-button" type="button">Restore backup</button>
+        <input id="restore-file" type="file" accept="application/json,.json" hidden>
+      </div>
+    </section>
+    <p id="app-message" class="app-message" role="status" aria-live="polite"></p>
+  </main>
+
+  <dialog id="store-info-dialog" class="app-dialog">
+    <div class="dialog-form">
+      <div class="dialog-heading">
+        <div><p class="eyebrow">STORE INFORMATION</p><h2>Store account</h2></div>
+        <button class="icon-button" type="button" data-close-dialog="store-info-dialog" aria-label="Close">×</button>
+      </div>
+      <p id="store-info-name" class="balance-note"></p>
+      <div class="dialog-actions"><button class="button button-primary" type="button" data-close-dialog="store-info-dialog">Close</button></div>
+    </div>
+  </dialog>
+
+  <dialog id="customer-dialog" class="app-dialog">
+    <form id="customer-form" class="dialog-form">
+      <div class="dialog-heading">
+        <div><p class="eyebrow">CUSTOMER</p><h2 id="customer-dialog-title">Add customer</h2></div>
+        <button class="icon-button" type="button" data-close-dialog="customer-dialog" aria-label="Close">×</button>
+      </div>
+      <input id="customer-id" type="hidden">
+      <label class="form-field">Customer name<input id="customer-name" type="text" maxlength="80" required autocomplete="name" placeholder="Enter customer name"></label>
+      <label class="form-field">Sitio<select id="customer-sitio" required>
+        <option value="" disabled selected>Select sitio</option>
+        <option>Sitio 1</option><option>Sitio 2</option><option>Sitio 3</option><option>Sitio 4</option>
+        <option>Sitio 5</option><option>Sitio 6</option><option>Sitio 7</option>
+      </select></label>
+      <div class="dialog-actions"><button class="button button-outline" type="button" data-close-dialog="customer-dialog">Cancel</button><button class="button button-primary" type="submit">Save customer</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="migration-dialog" class="app-dialog">
+    <div class="dialog-form">
+      <div class="dialog-heading">
+        <div><p class="eyebrow">IMPORT DATA</p><h2>Existing data found</h2></div>
+      </div>
+      <p>Existing Utang List data was found on this device. Do you want to import it to this store account?</p>
+      <div class="dialog-actions">
+        <button id="skip-migration" class="button button-outline" type="button">SKIP</button>
+        <button id="import-migration" class="button button-primary" type="button">IMPORT DATA</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="utang-dialog" class="app-dialog dialog-wide">
+    <form id="utang-form" class="dialog-form">
+      <div class="dialog-heading">
+        <div><p class="eyebrow">UTANG ENTRY</p><h2 id="utang-dialog-title">Add utang</h2></div>
+        <button class="icon-button" type="button" data-close-dialog="utang-dialog" aria-label="Close">×</button>
+      </div>
+      <input id="utang-id" type="hidden">
+      <div class="form-row">
+        <label class="form-field">Customer<select id="utang-customer" required></select></label>
+        <label class="form-field">Date<input id="utang-date" type="date" required></label>
+      </div>
+      <div class="items-heading"><h3>Items</h3><button class="button button-small button-outline" id="add-item-button" type="button">+ Add item</button></div>
+      <div id="item-rows" class="item-rows"></div>
+      <div class="transaction-total"><span>Total utang</span><strong id="utang-total">₱0.00</strong></div>
+      <div class="dialog-actions"><button class="button button-outline" type="button" data-close-dialog="utang-dialog">Cancel</button><button class="button button-primary" type="submit">Save utang</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="payment-dialog" class="app-dialog">
+    <form id="payment-form" class="dialog-form">
+      <div class="dialog-heading">
+        <div><p class="eyebrow">RECORD PAYMENT</p><h2>Customer payment</h2></div>
+        <button class="icon-button" type="button" data-close-dialog="payment-dialog" aria-label="Close">×</button>
+      </div>
+      <input id="payment-customer-id" type="hidden">
+      <p id="payment-customer-label" class="balance-note"></p>
+      <label class="form-field">Payment date<input id="payment-date" type="date" required></label>
+      <label class="form-field">Amount paid<input id="payment-amount" type="number" min="0.01" step="0.01" inputmode="decimal" required placeholder="0.00"></label>
+      <div class="dialog-actions"><button class="button button-outline" type="button" data-close-dialog="payment-dialog">Cancel</button><button class="button button-primary" type="submit">Save payment</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="history-dialog" class="app-dialog dialog-wide">
+    <div class="dialog-form">
+      <div class="dialog-heading">
+        <div><p class="eyebrow">CUSTOMER RECORD</p><h2 id="history-title">History</h2><p id="history-summary" class="history-summary"></p></div>
+        <button class="icon-button" type="button" data-close-dialog="history-dialog" aria-label="Close">×</button>
+      </div>
+      <div id="history-content" class="history-content"></div>
+      <div class="dialog-actions"><button class="button button-outline" type="button" data-close-dialog="history-dialog">Close</button><button class="button button-primary" id="history-add-utang" type="button">+ Add utang</button></div>
+    </div>
+  </dialog>
+
+  <template id="item-row-template">
+    <div class="item-row">
+      <label class="item-name">Item<input class="item-input item-name-input" type="text" maxlength="80" required placeholder="e.g. Coffee"></label>
+      <label class="item-quantity">Qty<input class="item-input item-quantity-input" type="number" min="1" step="1" inputmode="numeric" required placeholder="1"></label>
+      <label class="item-price">Price each<input class="item-input item-price-input" type="number" min="0" step="0.01" inputmode="decimal" required placeholder="0.00"></label>
+      <div class="item-line-total"><span>Total</span><strong>₱0.00</strong></div>
+      <button class="icon-button remove-item" type="button" aria-label="Remove item">×</button>
+    </div>
+  </template>
+</body>
+</html>
