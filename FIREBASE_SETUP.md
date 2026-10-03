@@ -71,12 +71,14 @@ Cross-device synchronization has not been verified against a deployed Firebase p
 
 ## Offline, Migration, Backup, and PWA
 
-- Firestore persistent cache is enabled where the browser supports it. Previously loaded data can be shown offline for a still-authenticated session.
-- Ordinary Firestore document writes can be queued by the SDK and display `SYNCING` until acknowledged. Account registration/login on a new device, payments, balance-sensitive transaction edits/deletes, customer deletion, restore, and migration require an internet connection.
-- The app displays `ONLINE`, `OFFLINE`, `SYNCING`, or `SYNC ERROR`; an offline or pending write is not reported as synced.
+- Firestore uses the modular SDK's `initializeFirestore()` with `persistentLocalCache()` and `persistentMultipleTabManager()`. Auth uses Firebase's local browser persistence. On restart, the app waits for Auth restoration, reads a cached `stores/{uid}` profile first, and opens the dashboard from cached data when available.
+- Customer, transaction, payment, and customer-history deletion writes use stable document IDs and Firestore `setDoc`, `deleteDoc`, or `writeBatch` operations, which can queue in the persistent cache while offline. Cached listeners update the current device immediately; the SDK sends queued writes when connectivity returns, and `onSnapshot` metadata drives the `OFFLINE`, `SYNCING`, and `ONLINE` states.
+- A first registration or sign-in on a new device still requires internet. Restore needs the relevant existing documents available in that device's cache to work offline. Legacy import requires internet and is offered only after a server-confirmed cloud load.
+- Offline balance checks use that device's cached records. Firestore rules still enforce UID ownership, but without a trusted backend they cannot atomically reconcile two devices that independently record payments while both are offline. Such concurrent offline edits may conflict when synchronized; the displayed balance remains clamped at zero. Reconnect and verify changes before relying on the final total.
+- The app displays `ONLINE`, `OFFLINE`, `SYNCING`, or `SYNC ERROR`; offline/pending writes are not labeled synced.
 - Existing `utang-list-data-v1` localStorage records are retained. After the store's cloud records load from the server, the app offers Import or Skip. Import is limited to an empty store, uses stable record IDs and a fingerprint marker to prevent repeat imports, and does not delete the local copy. Skip also leaves local data untouched.
 - Backups contain application records only. Restore validates records before writing and requires an internet connection.
-- The PWA caches the static app shell and Firebase SDK scripts only. Firebase Auth and Firestore private responses are not part of the service-worker static cache.
+- The PWA caches the app shell, Firebase modular SDK entrypoints, and service worker. The service-worker scope and cache URLs are resolved relative to the app's hosting path, including `https://felipedalumpines16-glitch.github.io/Listahan-sa-utang/`. Firebase Auth and Firestore API responses/private data are not static service-worker assets.
 
 ## Unused Legacy Functions Source
 

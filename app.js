@@ -69,6 +69,7 @@ import * as cloud from "./cloud.js";
   function userFacingError(error, fallback) {
     const code = error?.code || "";
     if (code === "store/profile-not-found") return "This authenticated account does not have a store profile. No profile was created during login.";
+    if (code === "store/profile-not-cached") return "Offline session restored. Store details will load after this device reconnects.";
     if (error?.phase === "store-profile" && code.includes("permission-denied")) {
       return error.operation === "read"
         ? "Firebase Auth succeeded, but Firestore denied reading the store profile. Check the deployed rules for this user's UID."
@@ -79,7 +80,8 @@ import * as cloud from "./cloud.js";
     if (["auth/email-already-in-use", "auth/account-exists-with-different-credential"].includes(code) || code.includes("already-exists")) return "This store name is already registered.";
     if (code === "auth/weak-password") return "Password must be at least 10 characters.";
     if (["auth/operation-not-allowed", "auth/configuration-not-found"].includes(code)) return "Enable Email/Password sign-in in Firebase Console, then try again.";
-    if (code === "auth/network-request-failed" || !navigator.onLine) return "Internet connection is required to sign in on this device.";
+    if (code === "auth/network-request-failed") return "Internet connection is required to sign in on this device.";
+    if (!navigator.onLine && code.includes("unavailable")) return "You are offline. Previously synchronized data is still available.";
     if (code.includes("unavailable")) return "Connect to the internet and retry this change.";
     if (code.includes("invalid-argument")) return "Check the information and try again.";
     if (code.includes("permission-denied")) return "Access denied. Please sign in again.";
@@ -109,7 +111,11 @@ import * as cloud from "./cloud.js";
     document.querySelector("#add-customer-open").hidden = false;
     document.querySelector("#store-info-name").textContent = storeName;
     setCloudStatus("SYNCING");
-    unsubscribeStoreProfile = cloud.watchStoreProfile(activeStoreId, profile => {
+    unsubscribeStoreProfile = cloud.watchStoreProfile(activeStoreId, (profile, status) => {
+      if (!profile) {
+        if (status.fromCache) setCloudStatus("OFFLINE");
+        return;
+      }
       activeStoreName = profile.storeName;
       document.querySelector("#account-store-name").textContent = activeStoreName;
       document.querySelector("#store-info-name").textContent = activeStoreName;
@@ -124,7 +130,7 @@ import * as cloud from "./cloud.js";
       cloudServerConfirmed = !status.fromCache && !status.hasPendingWrites;
       render();
       if (activeHistoryCustomerId && document.querySelector("#history-dialog").open) renderHistory(activeHistoryCustomerId, false);
-      setCloudStatus(!navigator.onLine || status.fromCache ? "OFFLINE" : status.hasPendingWrites ? "SYNCING" : "ONLINE");
+      setCloudStatus(!navigator.onLine ? "OFFLINE" : status.hasPendingWrites || status.fromCache ? "SYNCING" : "ONLINE");
       checkLegacyImport();
     }, error => {
       console.error("Cloud data listener failed.", error);
@@ -600,13 +606,13 @@ import * as cloud from "./cloud.js";
       return;
     }
     try {
-      setCloudStatus("SYNCING");
+      setCloudStatus(navigator.onLine ? "SYNCING" : "OFFLINE");
       await cloud.recordPayment(activeStoreId, customerId, { id: makeId(), date, amount, createdAt: new Date().toISOString() });
       closeDialog("payment-dialog");
       showMessage("Payment recorded.");
     } catch (error) {
       console.error("Payment save failed.", error);
-      setCloudStatus("SYNC ERROR", true);
+      setCloudStatus(navigator.onLine ? "SYNC ERROR" : "OFFLINE", navigator.onLine);
       showMessage(userFacingError(error, "Could not save payment. Please try again."), true);
     } finally {
       submit.disabled = false;
@@ -892,6 +898,12 @@ import * as cloud from "./cloud.js";
         const profile = await cloud.getStoreProfile(authenticatedUser);
         startStoreSession(authenticatedUser, profile.storeName);
       } catch (error) {
+        if (!navigator.onLine || error.code === "store/profile-not-cached" || error.code === "unavailable") {
+          startStoreSession(authenticatedUser, "Store");
+          setCloudStatus("OFFLINE");
+          showMessage("Offline session restored. Cached store data will appear when available.");
+          return;
+        }
         console.warn("Could not restore authenticated store account.", error.code || "unknown");
         setAuthMessage(userFacingError(error, "Could not load this store account."), true);
         await cloud.logoutStore().catch(logoutError => console.warn("Invalid store session sign-out failed.", logoutError.code || "unknown"));
